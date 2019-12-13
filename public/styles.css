@@ -1,0 +1,101 @@
+@import url("https://fonts.googleapis.com/css?family=Source%20Sans%20Pro:300");
+*, *:before, *:after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  /* background-image: url('/assets/bgimage.png') no-repeat center center fixed; */
+  background-size: cover;
+  font-family: 'Source Sans Pro', sans-serif;
+  background-color: #4341b4;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.text-wrapper {
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.title {
+  font-size: 9em;
+  font-weight: 700;
+  color: black;
+  position: relative;
+}
+
+.subtitle {
+  font-size: 40px;
+  font-weight: 700;
+  color: white;
+  position: relative;
+  text-shadow: 2px 2px 5px black;
+}
+
+.serverError {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    font-weight: 700;
+    color: white;
+    text-shadow: 2px 2px 5px black;
+}
+
+
+.buttons {
+  margin: 30px;
+}
+.buttons a.button {
+  background-color: #342643;
+  font-weight: 700;
+  border: 2px solid white;
+  text-decoration: none;
+  padding: 15px;
+  text-transform: uppercase;
+  color: white;
+  border-radius: 26px;
+  transition: all 0.2s ease-in-out;
+}
+.buttons a.button:hover {
+  background-color: #4d3864;
+  color: white;
+  transition: all 0.2s ease-in-out;
+}
+
+
+.subtitle:after, .title:after {
+  content: attr(data-content);
+  position: absolute;
+  left: 2px;
+  text-shadow: -1px 0 red;
+  top: 0;
+  color: white;
+  overflow: hidden;
+  clip: rect(0, 900px, 0, 0);
+  animation: noise-anim 2s infinite linear alternate-reverse;
+}
+
+
+.subtitle:before, .title:before {
+  content: attr(data-content);
+  position: absolute;
+  left: -2px;
+  text-shadow: 1px 0 blue;
+  top: 0;
+  color: white;
+  overflow: hidden;
+  clip: rect(0, 900px, 0, 0);
+  animation: noise-anim-2 3s infinite linear alternate-reverse;
+}
+img {
+	padding-top: 150px;
+}
