@@ -1,3 +1,6 @@
+// -------------------------------------------------------------
+// Really sorry about the mess, I didn't have time to do routing
+// -------------------------------------------------------------
 // load libraries
 const fs = require('fs');
 const mysql = require('mysql');
@@ -16,6 +19,7 @@ const passport = require('passport');
 
 // load one or more strategies
 const LocalStrategy = require('passport-local').Strategy;
+
 
 // Eth utility
 const eth = require('./eth');
@@ -51,7 +55,7 @@ const qp_ADD_NEW_USER_PROFILE = 'insert into profile(email) values(?)';
 
 const qp_CHECK_IF_USER_EXISTS = 'select count(*) as total from users where email = ?';
 const qp_AUTH_USER = 'select count(*) as user_count from users where email = ? and password = sha2(?, 256)';
-// Used for JWT generation
+
 const qp_GET_USER_KEY_DETAILS = 'select email, first_name, email_confirmed from users where email = ?';
 const qp_GET_USER_ETH_ADDRESS = 'select ethaddress from ethacc where email = ?';
 
@@ -59,12 +63,18 @@ const qp_UPDATE_USER_FIAT_BALANCE = 'update userbalance set fiat = fiat + ? wher
 const qp_GET_USER_ETH_ADDRESS_AND_PK = 'select ethaddress as address, ethpk as private_key from ethacc where email = ?';
 const qp_UPDATE_USER_ETH_BALANCE = 'update userbalance set eth = eth + ? where email = ?';
 
-// Check ethereum balance
 const qp_GET_USER_CURRENT_ACC_ETH = 'select eth from userbalance where email = ?';
 
 const qp_GET_USER_ALL_BALANCES = 'select * from userbalance where email = ?';
+const qp_UPDATE_USER_BALANCE = 'update userbalance set ? where email = ?';
 
+const qp_UPDATE_USER_FAVOURITES = 'insert into favourites (email, tag, ethaddress, notes) values ?';
+const qp_GET_IDS = 'select * from favourites where email = ?';
+const qp_DELETE_IDS = 'delete from favourites where id in ?';
+const qp_GET_USER_FAVOURITES = 'select * from favourites where email = ?';
 
+const qp_GET_USER_PROFILE = 'select u.first_name, u.last_name, p.dob, p.country, p.phone, p.mail_preferences from users as u join profile as p on u.email = p.email where u.email = ?';
+const qp_UPDATE_USER_PROFILE = 'update users as u, profile as p set u.first_name = ?, u.last_name = ?, p.dob = ?, p.country = ?, p.phone = ?, p.mail_preferences = ? where u.email = p.email and u.email= ?';
 
 
 // MySQl query functions
@@ -94,6 +104,19 @@ const getUserAllBalancesTxVersion = db.mkQuery(qp_GET_USER_ALL_BALANCES);
 const updateUserEthBalanceTxVersion = db.mkQuery(qp_UPDATE_USER_ETH_BALANCE);
 const updateUserFiatBalanceTxVersion = db.mkQuery(qp_UPDATE_USER_FIAT_BALANCE);
 
+// Favourites
+const updateUserFavourites = db.mkQueryFromPool(db.mkQuery(qp_UPDATE_USER_FAVOURITES), pool);
+const getIDs = db.mkQueryFromPool(db.mkQuery(qp_GET_IDS), pool);
+const deleteIDs = db.mkQueryFromPool(db.mkQuery(qp_DELETE_IDS), pool);
+const getUserFavourites = db.mkQueryFromPool(db.mkQuery(qp_GET_USER_FAVOURITES), pool);
+
+// Perform a trade
+const updateUserBalance = db.mkQuery(qp_UPDATE_USER_BALANCE);
+
+// Profile
+const getUserProfile = db.mkQueryFromPool(db.mkQuery(qp_GET_USER_PROFILE), pool);
+const updateUserProfile = db.mkQueryFromPool(db.mkQuery(qp_UPDATE_USER_PROFILE), pool);
+
 // Function to authenticate user through [email, password]
 // Returns true/false
 const authenticateUser = (param) => {
@@ -118,7 +141,6 @@ passport.use(
                     done(null, false);
                 })
                 .catch(err => {
-                    console.error('authentication db error: ', err);
                     done(null, false);
                 })
         }
@@ -129,15 +151,47 @@ passport.use(
 // Uses the tmp directory to temporarily store folders
 const upload = multer({ dest: path.join(__dirname, '/tmp/') });
 
-// Port
-const PORT = parseInt(process.argv[2] || process.env.APP_PORT || process.env.PORT) || 3000;
 
 // Start the express application
 const app = express();
 
+// Websocket
+const http = require("http").Server(app);
+const io = require("socket.io")(http);
+
 // CORS and Morgan
 app.use(cors());
 app.use(morgan('tiny'));
+
+// Port
+const PORT = parseInt(process.argv[2] || process.env.APP_PORT || process.env.PORT) || 3000;
+
+
+// Node-Binance-API
+const binance = require('node-binance-api')().options({
+    APIKEY: config.binance.apiKey,
+    APISECRET: config.binance.apiSecret,
+    useServerTime: true // If you get timestamp errors, synchronize to server time at startup
+});
+// Binance eth prices function for websocket
+const binancePrices = () => binance.websockets.depth(['ETHUSDT'], (depth) => {
+	let {e:eventType, E:eventTime, s:symbol, u:updateId, b:bidDepth, a:askDepth} = depth;
+    let bidPrice = bidDepth[bidDepth.length - 1][0];
+    let askPrice = askDepth[0][0];
+	io.emit('info', [bidPrice, askPrice]);
+});
+
+// Websocket connection
+io.on("connection", socket => {
+    // console.log("user connected");
+    // Upon connection, emit Binance eth ask/bid prices
+    // Overkill to use websocket for this, but this is to fulfill requirements
+    binancePrices();
+
+    socket.on("disconnect", function() {
+        // console.log("user disconnected");
+    });
+});
 
 // Middleware
 
@@ -161,7 +215,6 @@ const jwtVerification = () => {
             req.user = req.jwt.data;
             return next();
         } catch (e) {
-            console.log('>>> e: ', e);
             return res.redirect('/api/status/401');
         }
     }
@@ -170,7 +223,7 @@ const jwtVerification = () => {
 
 // Handle requests here
 
-// !!! Implement code checking - other cases
+// Internal redirect
 app.get('/api/status/:code', (req, res) => {
     res.status(parseInt(req.params.code)).json({ status: parseInt(req.params.code) });
 })
@@ -180,7 +233,6 @@ app.post('/api/registeruser', express.json({limit: '5mb'}), (req, res) => {
 	// Get information from form
 	m = req.body;
     // !!! Do checks on form: does email, password follow requirements
-    //
     // Start a transaction to add user details -> if addNewUser fails, rollback and send error
     pool.getConnection(
         (err, conn) => {
@@ -220,12 +272,11 @@ app.post('/api/registeruser', express.json({limit: '5mb'}), (req, res) => {
                         res.status(201).json({ status: 0 }); 
                     },
                     (status) => {
-                        console.log('>>> error is: ', status.error);
                         res.redirect('/api/status/500');
                     }
                 )
                 .finally(() => { conn.release() });
-        } // getConnection
+        }
     )
 })
 
@@ -241,7 +292,6 @@ app.post('/api/authenticate',
         session: false
 	}),
 	(req, res) => {
-		// console.log('>>> req.body: ', req.body);
 		// req.body -> email, password, checkbox: '' or true
         // Default expiry period of 30 minutes
         let expiryPeriod = (60 * 30); // 60 secs / min  *   30 mins
@@ -250,7 +300,6 @@ app.post('/api/authenticate',
             expiryPeriod = (60 * 60 * 24 * 1);
         }
         // Issue the JWT here
-        // console.info('>>> user: ', req.user);
         getUserKeyDetails([ req.user ])
             .then(result => {
                 // userData format: 
@@ -272,12 +321,10 @@ app.post('/api/authenticate',
                     },
                 },
                 config.jwtsecret)
-                console.log('>>> accesstoken is: ', token);
                 // Status, token_type, access_token, expiresAt
                 res.status(200).json({ status: 0, token_type: 'Bearer', access_token: token, expiresAt: ((d / 1000) + expiryPeriod), first_name: userData.first_name });
             })
             .catch(err => {
-                console.log('>>> err is: ', err);
                 res.redirect('/api/status/500');
             })
 	}
@@ -287,7 +334,6 @@ app.post('/api/authenticate',
 // || Authenticated routes only:
 app.get('/api/user/get/ethaddress', jwtVerification(), (req, res) => {
     // Get email from req.user object
-    // console.log('>>> req.user is: ', req.user);
     const email = req.user.email;
     getUserEthAddress([ email ])
     .then(result => {
@@ -299,7 +345,6 @@ app.get('/api/user/get/ethaddress', jwtVerification(), (req, res) => {
         }
     })
     .catch(err => {
-        console.log('>>> This is err: ', err);
         return res.status(500).json({ data: 'Internal server error, please try again' })
     });
 })
@@ -369,16 +414,14 @@ app.get('/api/user/account/all', jwtVerification(), (req, res) => {
         return res.status(200).json({ ...result[0] });
 	})
 	.catch(err => {
-		return res.status(500).json({ data: 'Internal server error, please try again' })
+		return res.status(500).json({ data: 'Internal server error, please try again' });
 	})
 })
 
 // Withdraw eth
-// !!! Also has the option to convert to urlencoded
-// !!! Maybe should ensure that receiverAddress is in the correct form - a lot of errors arising from it
+// !!! Maybe should ensure that receiverAddress is in the correct form - a lot of errors arising from wrong address format
 app.post('/api/user/withdraw/eth', jwtVerification(), express.json({limit: '5mb'}), (req, res) => {
     // Get the current user's email and other information required
-    console.log('>>>> req.body: ', req.body);
     const email = req.user.email, receiverAddress = req.body.addressToWithdrawTo, amtToSendInEth = parseFloat(req.body.amount);
     const gasPriceInGwei = 30, senderAddress = config.hotwallet.address, senderPK = config.hotwallet.privateKey;
     pool.getConnection(
@@ -424,7 +467,6 @@ app.post('/api/user/withdraw/eth', jwtVerification(), express.json({limit: '5mb'
                         return res.status(200).json({ status: 0 });
                     },
                     (status) => {
-                        console.log('>>>>>', status.error);
                         return res.status(500).json({ status: 1 });
                     }
                 )
@@ -471,7 +513,6 @@ app.post('/api/user/withdraw/fiat', jwtVerification(), express.json({limit: '5mb
                         return res.status(200).json({ status: 0 });
                     },
                     (status) => {
-                        console.log('>>>>>', status.error);
                         return res.status(500).json({ status: 1 });
                     }
                 )
@@ -480,25 +521,234 @@ app.post('/api/user/withdraw/fiat', jwtVerification(), express.json({limit: '5mb
     );
 })
 
-// !!! Testing out
-app.get('/testing', jwtVerification(), (req, res) => {
-    // Log info
-    // NOTE: req.user defined after passport auth is diff from after jwt auth!
-    console.log('>>> req.user: ', req.user);
-    console.log('>>> req.jwt: ', req.jwt);
-    res.json({ status: 0 });
+// Get Binance trading pair ask/bid prices
+app.get('/api/get/bidasks/:tradingpair', (req, res) => {
+    // Get trading pair
+    const tradingPair = req.params.tradingpair;
+    eth.getBinanceBidAskPrices(tradingPair)
+        .then(result => {
+            return res.status(200).json({ data: result });
+        })
+        .catch(err => {
+            return res.status(500).json({ data: 'Internal server error, please try again' });
+        })
 })
 
+// Make a trade
+app.post('/api/user/trade/:base/:quote', jwtVerification(), express.json({limit: '5mb'}), (req, res) => {
+    // Get information
+    const email = req.user.email, price = req.body.price, amt = req.body.amt.toString(), total = req.body.total;
+    const type = req.body.type;
+    const base = req.params.base, quote = req.params.quote;
+    // Perform transaction
+    pool.getConnection(
+        (err, conn) => {
+            if (err)
+                throw err;
+            // Start transaction
+            db.startTransaction(conn)
+                .then(status => {
+                    return (
+                        getUserAllBalancesTxVersion({ connection: status.connection, params: [ email ] })
+                    );
+                })
+                .then(status => {
+                    // Perform addition and subtraction of base and quote currencies
+                    // 'User balances' object
+                    const data = { ... status.result[0] };
+                    // Check if user has enough funds - if not, reject and stop transaction
+                    if (((total > data[quote]) && type == 'buy') || ((amt > data[base]) && type == 'sell')) {
+                        return Promise.reject({ connection: status.connection, error: 'Insufficient funds' })
+                    }
+                    const queryObj = {};
+                    // Base's original amt
+                    const baseOriginalAmt = data[`${base}`];
+                    // Quote's original amt
+                    const quoteOriginalAmt = data[`${quote}`];
+                    // Perform change in base and quote currency
+                    if (type == 'buy') {
+                        // Base currency + amount
+                        queryObj[`${base}`] = parseFloat(eth.addUsingBN(baseOriginalAmt, parseFloat(amt)));
+                        // Quote currency - total
+                        queryObj[`${quote}`] = parseFloat(eth.addUsingBN(quoteOriginalAmt, parseFloat(-total)));
+                    } else if (type == 'sell') {
+                        // Base currency - amount
+                        queryObj[`${base}`] = parseFloat(eth.addUsingBN(baseOriginalAmt, parseFloat(-amt)));
+                        // Quote currency + total
+                        queryObj[`${quote}`] = parseFloat(eth.addUsingBN(quoteOriginalAmt, parseFloat(total)));
+                    }
+                    return (
+                        updateUserBalance({ connection: status.connection, params: [ queryObj, email ] })
+                    );
+                })
+                .then(status => {
+                    // Write transaction log
+                    const information = { email, price, quantity: amt, total, base, quote, type, txID: uuidv1(), time: moment().valueOf() };
+                    return (dbmongo.insertLogTxVer(atlasClient, 'trades', information, status.connection));
+                })
+                .then(db.commit, db.rollback)
+                .then(
+                    (status) => {
+                        return res.status(200).json({ status: 0 });
+                    },
+                    (status) => {
+                        const message = (status.error.includes('Insufficient funds')) ? status.error : 1;
+                        return res.status(500).json({ status: message });
+                    }
+                )
+                .finally(() => { conn.release() });
+        }
+    );
+})
+
+// Get user's favourites list
+app.get('/api/user/favourites', jwtVerification(), (req, res) => {
+    // Get information
+    const email = req.user.email;
+    // Get user's favourites information
+    getUserFavourites([ email ])
+	.then(result => {
+		const data = [result];
+		// Get balances of each eth address
+		result.map(v => {
+			data.push(eth.getEthBalance(v.ethaddress));
+		});
+		return Promise.all(data);
+	})
+	.then(results => {
+		// Removes the original db data from the results array
+		const dbResults = results.shift();
+		// Remaining result array contains the eth balances
+		const ethBalanceArr = results.map(v => {
+			return parseFloat(parseFloat(v).toFixed(3));
+		});
+		const faveDetails = dbResults.map(v => {
+			return({
+				fav_details_id: v.id,
+				tag: v.tag,
+				ethAddress: v.ethaddress,
+				notes: v.notes
+			});
+		});
+        const result = { ethBalanceArr, faveDetails };
+		res.status(200).json({ data: result });
+	})
+	.catch(err => {
+        res.status(500).json({ data: { faveDetails: [] } });
+    });
+})
+
+// Update user's favourites list
+app.put('/api/user/favourites/update', jwtVerification(), express.json({limit: '5mb'}), (req, res) => {
+    // Get information
+    const email = req.user.email;
+    const data = req.body.faveDetails;
+    // Process data
+    const dataProcessed = data.map(v => {
+        return [ email, v.tag, v.ethAddress, v.notes ]
+    });
+    // Perform delete of all existing favourited entries, then add new ones
+    getIDs([ email ])
+    .then(result => {
+        const idArray = result.map(v => { return v.id; })
+        // Only delete if there are existing entries
+		if (idArray.length) {
+			return (deleteIDs([ [ idArray ] ]));
+		}
+    })
+    .then(result => {
+        return updateUserFavourites([ dataProcessed ]);
+	})
+	.then(result => {
+		res.status(200).json({ status: 0 });
+	})
+    .catch(err => {
+        res.status(500).json({ status: 1 });
+    });
+})
+
+// Get user logs
+app.get('/api/user/logs', jwtVerification(), (req, res) => {
+    const email = req.user.email;
+    Promise.all([
+        dbmongo.getDepositLogsByUserEmail(atlasClient, email),
+        dbmongo.getWithdrawalLogsByUserEmail(atlasClient, email),
+        dbmongo.getTradeLogsByUserEmail(atlasClient, email)
+    ])
+    .then(results => {
+        data = {
+            deposits: results[0],
+            withdrawals: results[1],
+            trades: results[2]
+        };
+        res.status(200).json({ data });
+    })
+    .catch(err => {
+        res.status(500).json({ data: [] });
+    })
+})
+
+// Get user profile
+app.get('/api/user/profile', jwtVerification(), (req, res) => {
+    const email = req.user.email;
+    getUserProfile([ email ])
+        .then(result => {
+            data = result.map(v => {
+                return({
+                    firstName: v.first_name,
+                    lastName: v.last_name,
+                    dob: moment.unix(v.dob).toDate(),
+                    country: v.country,
+                    phone: v.phone,
+                    mailPreferences: v.mail_preferences
+                });
+            })
+            res.status(200);
+            res.format({
+                'application/json': () => {
+                    res.json({ data });
+                },
+                'default': () => {
+                    res.status(406);
+                    res.send('GET request is not in a suitable format');
+                }
+            })
+        })
+        .catch(err => {
+            res.status(500).json({ data: [] });
+        })
+})
+
+// Update user profile
+app.post('/api/user/profile/update',jwtVerification(), express.urlencoded({extended: true}), (req, res) => {
+    const email = req.user.email;
+    const v = req.body;
+    const data = {
+            country: (v.country == 'null') ? null : v.country,
+            dob: (v.dob == 'null') ? null : parseInt(v.dob),
+            firstName: v.firstName,
+            lastName: v.lastName,
+            mailPreferences: (v.mailPreferences == '0') ? 0 : 1,
+            phone: (v.phone == 'null') ? null : v.phone
+    };
+    updateUserProfile([ data.firstName, data.lastName, data.dob, data.country, data.phone, data.mailPreferences, email ])
+        .then(result => {
+            res.status(200).json({ status: 0 });
+        })
+        .catch(err => {
+            res.status(200).json({ status: 1 });
+        });
+})
 
 // Serve static folders
 // app.use(express.static(path.join(__dirname, 'public')));
 
 
 // Execute 3 promises from initdb.js
-// If successful, start app.listen
+// If successful, start http.listen
 testConnections(pool, atlasClient, s3)
 	.then(() => {
-		app.listen(PORT,
+		http.listen(PORT,
 			() => {
 				console.info(`Application started on port ${PORT} at ${new Date()}`);
 			}

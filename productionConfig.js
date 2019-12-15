@@ -29,6 +29,8 @@ let jwtsecret;
 let hotwallet;
 // Paypal business account
 let paypal;
+// Binance
+let binance;
 
 // If config file used during development exists, use it 
 // If not, get config keys from env variables
@@ -45,6 +47,7 @@ if (fs.existsSync(configPath)) {
     jwtsecret = config.jwtsecret.secret;
     hotwallet = config.hotwallet;
     paypal = config.paypal;
+    binance = config.binance;
 } else {
     mysql = {
         host: process.env.DB_HOST,
@@ -72,7 +75,11 @@ if (fs.existsSync(configPath)) {
     paypal = {
         username: process.env.PAYPAL_USERNAME,
         password: process.env.PAYPAL_PASSWORD
-    }
+    };
+	binance = {
+		apiKey: process.env.BINANCE_APIKEY,
+		apiSecret: process.env.BINANCE_APISECRET
+	}
 }
 
-module.exports = { mysql, s3, mongodb, google, infura, jwtsecret, hotwallet, paypal };
+module.exports = { mysql, s3, mongodb, google, infura, jwtsecret, hotwallet, paypal, binance };

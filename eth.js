@@ -1,3 +1,4 @@
+// Load libraries
 const request = require('request-promise-native');
 
 // Ethereum
@@ -7,6 +8,7 @@ const Tx = require('ethereumjs-tx').Transaction;
 // Config file
 const config = require('./productionConfig');
 
+
 // ABIs
 const ABI = require('./abis');
 
@@ -14,7 +16,7 @@ const ABI = require('./abis');
 
 // Main net
 // const web3 = new Web3(`https://mainnet.infura.io/${config.infura}`);
-// Test net
+// NOTE: Connecting to testnet, not mainnet!!
 const web3 = new Web3(`https://ropsten.infura.io/${config.infura}`);
 
 // Big number library required for calculations
@@ -25,7 +27,7 @@ const BN = web3.utils.BN;
 // https://github.com/MikeMcl/bignumber.js/
 const BigNumber = require('bignumber.js');
 
-// Subtract function: performs (a-b)
+// Subtract function: performs (a-b) | Takes two numbers in
 const subtractUsingBN = (a , b) => {
     const first = new BigNumber(a.toString());
     const second = new BigNumber(b.toString());
@@ -33,14 +35,29 @@ const subtractUsingBN = (a , b) => {
     return subtracted.toString();
 }
 
+// Add function: performs (a+b) | Takes two numbers in
+const addUsingBN = (a , b) => {
+    const first = new BigNumber(a.toString());
+    const second = new BigNumber(b.toString());
+    const added = first.plus(second);
+    return added.toString();
+}
 
-
-// web3.eth.getBalance(ethAdd3.address)
-// .then(result => {
-//     const balanceInEth = web3.utils.fromWei(result.toString(), 'ether');
-//     console.log(balanceInEth, 'eth');
-// })
-// .catch(err => {console.error(err)});
+// Get bid/ask prices of trading pair from Binance e.g. 'ETHUSDT'
+const getBinanceBidAskPrices = (tradingPair) => {
+	return new Promise(
+		(resolve, reject) => {
+			//
+			binance.bookTickers(tradingPair, (error, ticker) => {
+				if (error) {
+					// The error.body object contains the error info
+					return reject(error.body);
+				}
+				return resolve(ticker);
+			});
+		}
+	)
+}
 
 
 // || Gets fastest gas price from ethgasstation, and the total fees in eth 
@@ -70,8 +87,6 @@ const gasPriceAndFees = new Promise(
     }
 )
 
-
-// web3.eth.getBalance(ethAdd3.address)
 
 // // || Perform transaction from ethAdd1 to ethAdd2
 
@@ -123,8 +138,8 @@ const ethtx = (senderAddress, receiverAddress, amtToSendInEth, gasPriceInGwei, s
                     web3.eth.sendSignedTransaction(raw, (err, txHash) => {
                         // Testnet: https://ropsten.etherscan.io
                         const transactionHash = txHash;
-                        console.log('>>> txHash is:', txHash);
-                        console.log('>>> err is: ', err);
+                        // console.log('>>> txHash is:', txHash);
+                        // console.log('>>> err is: ', err);
                         if (transactionHash) {
                             return resolve(transactionHash);
                         } else {
@@ -136,55 +151,8 @@ const ethtx = (senderAddress, receiverAddress, amtToSendInEth, gasPriceInGwei, s
         }
     )
 }
-// || SUCCESS!!!!
-// ethtx(ethAdd3.address, ethAdd1.address, 0.1, 30, ethAdd3.privateKey)
-// .then(result => {
-//     console.log(result);
-// })
-// .catch(err => {console.error(err)});
 
-
-
-
-// Old function
-// web3.eth.getTransactionCount(ethAdd3.address, (err, txCount) => {
-//     const txObject = {
-//         // This value has to be converted to Hexadecimal
-//         nonce: web3.utils.toHex(txCount),
-//         // The account the ether is sent to
-//         to: ethAdd2.address,
-//         // The amount of ether to send, expressed in hexadecimal and wei
-//         // 0.1 eth sent in this case
-//         value: web3.utils.toHex(web3.utils.toWei('1.49', 'ether')),
-//         // Max amount of gas consumed by the transaction - simple tx is 21000 by default
-//         gasLimit: web3.utils.toHex(21000),
-//         // Gas price in gwei/gas
-//         gasPrice: web3.utils.toHex(web3.utils.toWei('30', 'gwei'))
-//     }
-
-//     // Initialize module to sign tx locally
-//     // https://ethereum.stackexchange.com/questions/77737/transaction-hash-is-undefined-when-running-web3-code-from-command-prompt
-//     const tx = new Tx(txObject, {chain:'ropsten', hardfork: 'petersburg'});
-
-//     // Sign transaction using private key
-//     tx.sign(privateKey3);
-//     // Serialize the transaction -> output is a buffer
-//     const serializedTx = tx.serialize();
-    
-//     // Convert serialized transaction to a hexidecimal string
-//     const raw = '0x' + serializedTx.toString('hex');
-
-//     // Broadcast the transaction
-//     web3.eth.sendSignedTransaction(raw, (err, txHash) => {
-//         // Testnet: https://ropsten.etherscan.io
-//         const transactionHash = txHash;
-//         console.log('>>> txHash is:', txHash);
-//         console.log('>>> err is: ', err);
-//     })
-// })
-
-
-
+// !!! To be implemented
 
 // ||| Create account
 // Technically an account, but commonly referred to as paper wallet
@@ -195,9 +163,6 @@ const ethtx = (senderAddress, receiverAddress, amtToSendInEth, gasPriceInGwei, s
 const createEthPaperAccount = () => {
     return { ... web3.eth.accounts.create() };
 }
-
-
-
 
 // // ||| Version 2: Create account using password, then generating a keystore
 // // Accessing the account requires a keystore and a password
@@ -222,12 +187,6 @@ const createEthPaperAccount = () => {
 
 // ||| Get balance
 
-// // async! Version 1: callback
-// web3.eth.getBalance(address, (err, resultInWei) => {
-// 	balance = web3.utils.fromWei(resultInWei, 'ether');
-// 	console.log('>>> Balance is: ', balance);
-// })
-
 // Returns the amount of eth stored in an address (units in Eth)
 const getEthBalance = (address) => {
     return new Promise(
@@ -251,4 +210,4 @@ const getEthBalance = (address) => {
 
 
 // Export modules
-module.exports = { web3, subtractUsingBN, createEthPaperAccount, ethtx, gasPriceAndFees, getEthBalance };
+module.exports = { web3, getBinanceBidAskPrices, subtractUsingBN, addUsingBN, createEthPaperAccount, ethtx, gasPriceAndFees, getEthBalance };

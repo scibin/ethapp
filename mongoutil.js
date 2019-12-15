@@ -23,77 +23,45 @@ const insertLogTxVer = (client, collectionName, information, connection) => {
     });
 }
 
-
-// Gets the list of distinct values according to an attribute
-const getDistinctList = (client, distinctAttribute) => {
+// Get transaction logs by user identified via email
+// General function
+const getLogsByUserEmail = (client, collectionName, email) => {
     return new Promise((resolve, reject) => {
-        client.db(mongoDBName).collection(mongoDBCollection)
-        .distinct(distinctAttribute)
-        .then(result => resolve(result))
-        .catch(err => reject(err))
-    });
-};
-
-// Get the list of listings in a particular country
-// Default limit is 200
-const getListingsList = (client, country, limit = 200) => {
-    return new Promise((resolve, reject) => {
-        client.db(mongoDBName).collection(mongoDBCollection)
-        .find({ 'address.country': country }).project({
-            _id: 1,
-            name: 1,
-            summary: 1,
-            'images.picture_url': 1,
-            'host.host_location': 1,
-            'host.host_name': 1
-        }).limit(limit)
+        client.db(mongoDBName).collection(collectionName)
+        .find({ email: email })
         .toArray()
         .then(result => resolve(result))
         .catch(err => reject(err))
     });
-};
+}
 
-const getListing = (client, id) => {
+// Get trade logs by user identified via email
+// Specific function
+const getTradeLogsByUserEmail = (client, email) => {
     return new Promise((resolve, reject) => {
-        client.db(mongoDBName).collection(mongoDBCollection)
+        client.db(mongoDBName).collection('trades')
         .aggregate([
             {
-                $match: { _id: id }
+                $match: { email: email }
             },
             {
                 $project: {
-                    listing_url: 1,
-                    name: 1,
-                    space: 1,
-                    description: 1,
-                    neighborhood_review: 1,
-                    access: 1,
-                    property_type: 1,
-                    room_type: 1,
-                    bed_type: 1,
-                    minimum_nights: 1,
-                    maximum_nights: 1,
-                    cancellation_policy: 1,
-                    accomodates: 1,
-                    bedrooms: 1,
-                    beds: 1,
-                    number_of_reviews: 1,
-                    bathrooms: 1,
-                    amenities: 1,
-                    price: 1,
-                    image: '$images.picture_url',
-                    host: 1,
-                    address: 1,
-                    coordinates: {
-                            type: 'Point',
-                            coordinates: [
-                                { $arrayElemAt: [ '$address.location.coordinates', 0 ] },
-                                { $arrayElemAt: [ '$address.location.coordinates', 1 ] }
-                                ]
+                    _id: 0,
+                    type: 1,
+                    time: 1,
+                    id: '$txID',
+                    pair: {
+                        $concat: [
+                            '$base', '$quote'
+                        ]
                     },
-                    review_scores: 1,
-                    reviews: 1
+                    price: 1,
+                    quantity: 1,
+                    total: 1
                 }
+            },
+            {
+                $sort: { time: -1 }
             }
         ])
         .toArray()
@@ -102,4 +70,83 @@ const getListing = (client, id) => {
     })
 }
 
-module.exports = { insertLog, insertLogTxVer };
+// Get deposit logs by user identified via email
+// Specific function
+const getDepositLogsByUserEmail = (client, email) => {
+    return new Promise((resolve, reject) => {
+        client.db(mongoDBName).collection('deposits')
+        .aggregate([
+            {
+                $match: { email: email }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    time: 1,
+                    // For the id, if the withdrawal is fiat, take the txID. If eth, take the txhash
+                    id: {
+                        $cond: [{$eq: ['$currency', 'fiat']}, '$txID', '$txhash']
+                    },
+                    amount: {
+                        $cond: [{$eq: ['$currency', 'fiat']}, '$fiatAmt', '$ethAmount']
+                    },
+                    currency: 1,
+                    from: 1
+                }
+            },
+            {
+                $sort: { time: -1 }
+            }
+        ])
+        .toArray()
+        .then(result => resolve(result))
+        .catch(err => reject(err))
+    })
+}
+
+// Get withdrawal logs by user identified via email
+// Specific function
+const getWithdrawalLogsByUserEmail = (client, email) => {
+    return new Promise((resolve, reject) => {
+        client.db(mongoDBName).collection('withdrawals')
+        .aggregate([
+            {
+                $match: { email: email }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    time: 1,
+                    // For the id, if the withdrawal is fiat, take the txID. If eth, take the txhash
+                    id: {
+                        $cond: [{$eq: ['$currency', 'fiat']}, '$txID', '$txhash']
+                    },
+                    amount: {
+                        $cond: [{$eq: ['$currency', 'fiat']}, '$fiatAmount', '$ethAmount']
+                    },
+                    currency: 1,
+                    to: 1
+                //    balance: {
+                //        $cond: [{$eq: ['$currency', 'fiat']}, '$fiatBalance', '$ethBalance']
+                //    }
+                }
+            },
+            {
+                $sort: { time: -1 }
+            }
+        ])
+        .toArray()
+        .then(result => resolve(result))
+        .catch(err => reject(err))
+    })
+}
+
+
+module.exports = {
+    insertLog,
+    insertLogTxVer,
+    getLogsByUserEmail,
+    getTradeLogsByUserEmail,
+    getDepositLogsByUserEmail,
+    getWithdrawalLogsByUserEmail
+};
