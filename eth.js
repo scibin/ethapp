@@ -14,7 +14,7 @@ const ABI = require('./abis');
 
 // Ethereum - initialize web3, connect to remote node
 
-// Main net
+// web3 instance
 // const web3 = new Web3(`https://mainnet.infura.io/${config.infura}`);
 // NOTE: Connecting to testnet, not mainnet!!
 const web3 = new Web3(`https://ropsten.infura.io/${config.infura}`);
